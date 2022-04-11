@@ -37,14 +37,19 @@ function getSettings () {
     return new Gio.Settings({ settings_schema : schemaObj });
 }
 
+function _is_tiling(window) {
+    return !window.is_hidden() && !window.maximized_horizontally && !window.maximized_horizontally && window.allows_resize()
+}
+
 class TilingWorkspace {
     constructor(ws) {
+        // work space manager
         this.wsm = global.workspace_manager
+        // work space
         this.ws = ws
-        this.windows = []
 
-        this.master = null
-        this.stack = []
+        // tiling windows
+        this.t_windows = []
 
         // master window fact
         this.mw_fact = 0.5
@@ -53,70 +58,68 @@ class TilingWorkspace {
     }
 
     layout() {
-        let windows = this.ws.list_windows()
+        var t_windows = this.ws.list_windows().filter(_is_tiling)
 
         // no window
-        if (windows.length == 0) { 
-            this.master = null
-            this.stack = []
+        if (t_windows.length == 0) { 
+            this.t_windows = []
             return
         }
 
-        if (this.master == null) {
-            this.master = windows[0]
-        }
-
-        this.stack = []
-        for (var i=0; i< windows.length; i++) {
-            let window = windows[i]
-            if (window.get_id() != this.master.get_id()) {
-                this.stack.push(window)
+        var t_window_id_set = new Set(t_windows.map(window => window.get_id()))
+        this.t_windows = this.t_windows.filter(window => t_window_id_set.has(window.get_id()))
+        let this_t_window_id_set = new Set(this.t_windows.map(window => window.get_id()))
+        t_windows.forEach(window => {
+            if (!this_t_window_id_set.has(window.get_id())) {
+                this.t_windows.push(window)
             }
-        }
-
-        print('master: ', this.master.get_id(), ' stack count: ', this.stack.length)
+        });
+        print('tiling window count: ', this.t_windows.length)
     }
 
     relocate() {
         // no window
-        if (this.master == null) {
+        if (this.t_windows.length == 0) {
             return
         }
 
         let area = this.ws.get_work_area_all_monitors()
 
         // 1 window
-        if (this.stack.length == 0) {
-            this.master.move_resize_frame(false, 0, 0 + this.y_offset, area.width, area.height)
+        if (this.t_windows.length == 1) {
+            this.t_windows[0].move_frame(false, 0, 0 + this.y_offset)
+            this.t_windows[0].move_resize_frame(false, 0, 0 + this.y_offset, area.width, area.height)
             return
         }
 
         // >1 window
         let master_width = Math.floor(area.width * this.mw_fact)
-        this.master.move_resize_frame(false, 0, 0 + this.y_offset, master_width, area.height)
+        this.t_windows[0].move_frame(false, 0, 0 + this.y_offset)
+        this.t_windows[0].move_resize_frame(false, 0, 0 + this.y_offset, master_width, area.height)
 
-        let stack_count = this.stack.length
+        let stack_count = this.t_windows.length - 1
         let stack_width = area.width - master_width
         let stack_height = Math.floor(area.height / stack_count)
 
-        for (var i=0; i<this.stack.length; i++) {
-            let window = this.stack[i]
-            window.move_resize_frame(false, master_width, i * stack_height + this.y_offset, stack_width, stack_height)
-            log('relocate stack ', i, ' to ', master_width, i * stack_height + this.y_offset, stack_width, stack_height)
+        for (var i=1; i<this.t_windows.length; i++) {
+            this.t_windows[i].move_frame(false, master_width, (i - 1) * stack_height + this.y_offset)
+            this.t_windows[i].move_resize_frame(false, master_width, (i - 1) * stack_height + this.y_offset, stack_width, stack_height)
+            log('locate stack', i - 1, master_width, (i - 1) * stack_height + this.y_offset, stack_width, stack_height)
         }
     }
 
     focus_relative(offset) {
-        // no window
-        if (this.master == null || this.stack.length == 0) {
-            return
-        }
-
         var windows = []
-        windows.push(this.master)
-        for (let stack_w of this.stack) {
-            windows.push(stack_w)
-        }
+        this.t_windows.forEach(window => {
+            windows.push(window)
+        });
+
+        let this_t_window_id_set = new Set(this.t_windows.map(window => window.get_id()))
+        this.ws.list_windows().forEach(window => {
+            if (!this_t_window_id_set.has(window.get_id())) {
+                windows.push(window)
+            }
+        })
 
         var current_window_index = 0
         while (current_window_index < windows.length) {
@@ -142,26 +145,28 @@ class TilingWorkspace {
     }
 
     swap_master() {
-        if (this.master == null || this.stack.length == 0) {
-            return
-        }
-
-        let windows = this.ws.list_windows()
-        var current_window = null
-        for (let window of windows) {
-            if (window.has_focus()) {
-                current_window = window
+        var f_window_index = -1
+        for (var i=0; i<this.t_windows.length; i++) {
+            if (this.t_windows[i].has_focus()) {
+                f_window_index = i
                 break
             }
         }
 
-        if (this.master.get_id() != current_window.get_id()) {
-            this.master = current_window
-        } else {
-            this.master = this.stack[0]
+        if (f_window_index == -1) {
+            return
         }
 
-        this.layout()
+        if (f_window_index != 0) {
+            let new_master = this.t_windows[f_window_index]
+            this.t_windows[f_window_index] = this.t_windows[0]
+            this.t_windows[0] = new_master
+        } else if (this.t_windows.length > 1) {
+            let new_master = this.t_windows[1]
+            this.t_windows[1] = this.t_windows[0]
+            this.t_windows[0] = new_master
+        }
+
         this.relocate()
     }
 
