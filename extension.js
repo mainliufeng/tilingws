@@ -87,24 +87,29 @@ class TilingWorkspace {
 
         // 1 window
         if (this.t_windows.length == 1) {
-            this.t_windows[0].move_frame(false, 0, 0 + this.y_offset)
-            this.t_windows[0].move_resize_frame(false, 0, 0 + this.y_offset, area.width, area.height)
+            this.t_windows[0].move_resize_frame(true, 0, 0 + this.y_offset, area.width, area.height)
+            this.t_windows[0].move_frame(true, 0, 0 + this.y_offset)
             return
         }
 
         // >1 window
         let master_width = Math.floor(area.width * this.mw_fact)
-        this.t_windows[0].move_frame(false, 0, 0 + this.y_offset)
-        this.t_windows[0].move_resize_frame(false, 0, 0 + this.y_offset, master_width, area.height)
+        this.t_windows[0].move_resize_frame(true, 0, 0 + this.y_offset, master_width, area.height)
+        this.t_windows[0].move_frame(true, 0, 0 + this.y_offset)
 
         let stack_count = this.t_windows.length - 1
         let stack_width = area.width - master_width
         let stack_height = Math.floor(area.height / stack_count)
+        let height_remain = area.height - stack_count * stack_height
 
         for (var i=1; i<this.t_windows.length; i++) {
-            this.t_windows[i].move_frame(false, master_width, (i - 1) * stack_height + this.y_offset)
-            this.t_windows[i].move_resize_frame(false, master_width, (i - 1) * stack_height + this.y_offset, stack_width, stack_height)
-            log('locate stack', i - 1, master_width, (i - 1) * stack_height + this.y_offset, stack_width, stack_height)
+            var height = stack_height
+            if (i == this.t_windows.length - 1) {
+                height += height_remain
+            }
+            this.t_windows[i].move_resize_frame(true, master_width, (i - 1) * stack_height + this.y_offset, stack_width, height)
+            this.t_windows[i].move_frame(true, master_width, (i - 1) * stack_height + this.y_offset)
+            log('locate stack', i - 1, master_width, (i - 1) * stack_height + this.y_offset, stack_width, height)
         }
     }
 
