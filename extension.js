@@ -38,7 +38,16 @@ function getSettings () {
 }
 
 function _is_tiling(window) {
-    return !window.is_hidden() && !window.maximized_horizontally && !window.maximized_horizontally && window.allows_resize()
+    print('window: ', window.get_id(), window.is_hidden(), window.maximized_horizontally, window.maximized_horizontally, window.allows_resize())
+    // return !window.is_hidden() && !window.maximized_horizontally && !window.maximized_horizontally && window.allows_resize()
+    return !window.maximized_horizontally && !window.maximized_horizontally && window.allows_resize()
+}
+
+function window_move_resize(window, x, y, width, height) {
+    let frame_rect = new Meta.Rectangle({x, y, width, height})
+    window.unmaximize(Meta.MaximizeFlags.BOTH)
+    window.move_resize_frame(true, frame_rect.x, frame_rect.y, frame_rect.width, frame_rect.height)
+    window.move_frame(true, frame_rect.x, frame_rect.y)
 }
 
 class TilingWorkspace {
@@ -53,8 +62,6 @@ class TilingWorkspace {
 
         // master window fact
         this.mw_fact = 0.5
-
-        this.y_offset = 80
     }
 
     layout() {
@@ -87,15 +94,13 @@ class TilingWorkspace {
 
         // 1 window
         if (this.t_windows.length == 1) {
-            this.t_windows[0].move_resize_frame(true, 0, 0 + this.y_offset, area.width, area.height)
-            this.t_windows[0].move_frame(true, 0, 0 + this.y_offset)
+            window_move_resize(this.t_windows[0], 0, 0 + area.y, area.width, area.height)
             return
         }
 
         // >1 window
         let master_width = Math.floor(area.width * this.mw_fact)
-        this.t_windows[0].move_resize_frame(true, 0, 0 + this.y_offset, master_width, area.height)
-        this.t_windows[0].move_frame(true, 0, 0 + this.y_offset)
+        window_move_resize(this.t_windows[0], 0, 0 + area.y, master_width, area.height)
 
         let stack_count = this.t_windows.length - 1
         let stack_width = area.width - master_width
@@ -107,10 +112,15 @@ class TilingWorkspace {
             if (i == this.t_windows.length - 1) {
                 height += height_remain
             }
-            this.t_windows[i].move_resize_frame(true, master_width, (i - 1) * stack_height + this.y_offset, stack_width, height)
-            this.t_windows[i].move_frame(true, master_width, (i - 1) * stack_height + this.y_offset)
-            log('locate stack', i - 1, master_width, (i - 1) * stack_height + this.y_offset, stack_width, height)
+            window_move_resize(this.t_windows[i], master_width, (i - 1) * stack_height + area.y, stack_width, height)
+            log('locate stack', i - 1, master_width, (i - 1) * stack_height + area.y, stack_width, height)
         }
+
+        for (var i=0; i<this.t_windows.length; i++) {
+            let rect = this.t_windows[i].get_frame_rect()
+            log('window', i, 'rect: ', rect.x, rect.y, rect.width, rect.height)
+        }
+
     }
 
     focus_relative(offset) {
@@ -207,6 +217,12 @@ class Extension {
         return tws
     }
 
+    layout_ws(workspace) {
+        let tws = this.get_tws(workspace)
+        tws.layout()
+        tws.relocate()
+    }
+
     enable() {
         // Shell.ActionMode.NORMAL
         // Shell.ActionMode.OVERVIEW
@@ -244,16 +260,18 @@ class Extension {
         for (var i=0; i<global.workspace_manager.get_n_workspaces(); i++) {
             let ws = global.workspace_manager.get_workspace_by_index(i)
             ws.connect('window-added', (window) => {
-                let tws = this.get_tws(ws)
-                tws.layout()
-                tws.relocate()
+                this.layout_ws(ws)
             });
             ws.connect('window-removed', (window) => {
-                let tws = this.get_tws(ws)
-                tws.layout()
-                tws.relocate()
+                this.layout_ws(ws)
             });
         }
+        global.window_manager.connect('switch-workspace', (_, old_ws_index, new_ws_index) => {
+            let old_ws = global.workspace_manager.get_workspace_by_index(old_ws_index)
+            this.layout_ws(old_ws)
+            let new_ws = global.workspace_manager.get_workspace_by_index(new_ws_index)
+            this.layout_ws(new_ws)
+        })
     }
 
     disable() {
